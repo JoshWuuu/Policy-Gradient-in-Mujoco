@@ -23,25 +23,33 @@ class BasePolicy:
         """
         raise NotImplementedError
 
-    def act(self, observations):
+    def act(self, observations, return_log_prob = False):
         """
         Args:
             observations: np.array of shape [batch size, dim(observation space)]
         Returns:
             sampled_actions: np.array of shape [batch size, *shape of action]
+            log_probs: np.array of shape [batch size] (optionally, if return_log_prob)
 
         TODO:
         Call self.action_distribution to get the distribution over actions,
-        then sample from that distribution. You will have to convert the
-        actions to a numpy array, via numpy(). Put the result in a variable
-        called sampled_actions (which will be returned).
+        then sample from that distribution. Compute the log probability of
+        the sampled actions using self.action_distribution. You will have to
+        convert the actions and log probabilities to a numpy array, via numpy(). 
+
+        You may find the following documentation helpful:
+        https://pytorch.org/docs/stable/distributions.html
         """
         observations = np2torch(observations)
         #######################################################
-        #########   YOUR CODE HERE - 1-3 lines.    ############
-
+        #########   YOUR CODE HERE - 1-4 lines.    ############
+        sampled_actions = self.action_distribution(observations).sample().cpu().detach()
+        log_probs = self.action_distribution(observations).log_prob(sampled_actions).cpu().detach().numpy()
+        sampled_actions = sampled_actions.numpy()
         #######################################################
         #########          END YOUR CODE.          ############
+        if return_log_prob:
+            return sampled_actions, log_probs
         return sampled_actions
 
 
@@ -62,11 +70,10 @@ class CategoricalPolicy(BasePolicy, nn.Module):
         """
         #######################################################
         #########   YOUR CODE HERE - 1-2 lines.    ############
-
+        distribution = ptd.Categorical(logits=self.network(observations))
         #######################################################
         #########          END YOUR CODE.          ############
         return distribution
-
 
 class GaussianPolicy(BasePolicy, nn.Module):
     def __init__(self, network, action_dim):
@@ -80,7 +87,7 @@ class GaussianPolicy(BasePolicy, nn.Module):
         self.network = network
         #######################################################
         #########   YOUR CODE HERE - 1 line.       ############
-
+        self.log_std = nn.Parameter(torch.zeros(action_dim))
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -94,7 +101,7 @@ class GaussianPolicy(BasePolicy, nn.Module):
         """
         #######################################################
         #########   YOUR CODE HERE - 1 line.       ############
-
+        std = torch.exp(self.log_std)
         #######################################################
         #########          END YOUR CODE.          ############
         return std
@@ -118,7 +125,9 @@ class GaussianPolicy(BasePolicy, nn.Module):
         """
         #######################################################
         #########   YOUR CODE HERE - 2-4 lines.    ############
-
+        distribution = ptd.MultivariateNormal(
+            loc=self.network(observations), scale_tril=torch.diag(self.std())
+        )
         #######################################################
         #########          END YOUR CODE.          ############
         return distribution

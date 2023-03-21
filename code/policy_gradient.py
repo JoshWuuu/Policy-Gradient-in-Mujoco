@@ -12,6 +12,7 @@ class PolicyGradient(object):
     """
     Class for implementing a policy gradient algorithm
     """
+
     def __init__(self, env, config, seed, logger=None):
         """
         Initialize Policy Gradient Class
@@ -41,8 +42,11 @@ class PolicyGradient(object):
 
         # discrete vs continuous action space
         self.discrete = isinstance(env.action_space, gym.spaces.Discrete)
+        print(env.action_space, gym.spaces.Discrete)
         self.observation_dim = self.env.observation_space.shape[0]
-        self.action_dim = self.env.action_space.n if self.discrete else self.env.action_space.shape[0]
+        self.action_dim = (
+            self.env.action_space.n if self.discrete else self.env.action_space.shape[0]
+        )
 
         self.lr = self.config.learning_rate
 
@@ -63,13 +67,18 @@ class PolicyGradient(object):
            If self.discrete = False (meaning that the actions are continuous,
            i.e. elements of R^d where d is the dimension), instantiate a
            GaussianPolicy. Either way, assign the policy to self.policy
-        3. Create an optimizer for the policy, with learning rate self.lr
+        3. Create an Adam optimizer for the policy, with learning rate self.lr
            Note that the policy is an instance of (a subclass of) nn.Module, so
            you can call the parameters() method to get its parameters.
         """
         #######################################################
         #########   YOUR CODE HERE - 8-12 lines.   ############
-
+        network = build_mlp(self.observation_dim, self.action_dim, self.config.n_layers, self.config.layer_size)
+        if self.discrete:
+            self.policy = CategoricalPolicy(network)
+        else:
+            self.policy = GaussianPolicy(network, self.action_dim)
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr)
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -77,10 +86,10 @@ class PolicyGradient(object):
         """
         You don't have to change or use anything here.
         """
-        self.avg_reward = 0.
-        self.max_reward = 0.
-        self.std_reward = 0.
-        self.eval_reward = 0.
+        self.avg_reward = 0.0
+        self.max_reward = 0.0
+        self.std_reward = 0.0
+        self.eval_reward = 0.0
 
     def update_averages(self, rewards, scores_eval):
         """
@@ -101,7 +110,7 @@ class PolicyGradient(object):
     def record_summary(self, t):
         pass
 
-    def sample_path(self, env, num_episodes = None):
+    def sample_path(self, env, num_episodes=None):
         """
         Sample paths (trajectories) from the environment.
 
@@ -127,7 +136,7 @@ class PolicyGradient(object):
         paths = []
         t = 0
 
-        while (num_episodes or t < self.config.batch_size):
+        while num_episodes or t < self.config.batch_size:
             state = env.reset()
             states, actions, rewards = [], [], []
             episode_reward = 0
@@ -140,15 +149,17 @@ class PolicyGradient(object):
                 rewards.append(reward)
                 episode_reward += reward
                 t += 1
-                if (done or step == self.config.max_ep_len-1):
+                if done or step == self.config.max_ep_len - 1:
                     episode_rewards.append(episode_reward)
                     break
                 if (not num_episodes) and t == self.config.batch_size:
                     break
 
-            path = {"observation" : np.array(states),
-                    "reward" : np.array(rewards),
-                    "action" : np.array(actions)}
+            path = {
+                "observation": np.array(states),
+                "reward": np.array(rewards),
+                "action": np.array(actions),
+            }
             paths.append(path)
             episode += 1
             if num_episodes and episode >= num_episodes:
@@ -185,7 +196,9 @@ class PolicyGradient(object):
             rewards = path["reward"]
             #######################################################
             #########   YOUR CODE HERE - 5-10 lines.   ############
-
+            returns = []
+            for i in range(len(rewards)):
+                returns.append(np.sum(rewards[i:] * self.config.gamma ** np.arange(len(rewards[i:]))))
             #######################################################
             #########          END YOUR CODE.          ############
             all_returns.append(returns)
@@ -210,7 +223,7 @@ class PolicyGradient(object):
         """
         #######################################################
         #########   YOUR CODE HERE - 1-2 lines.    ############
-
+        normalized_advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-8)
         #######################################################
         #########          END YOUR CODE.          ############
         return normalized_advantages
@@ -226,7 +239,9 @@ class PolicyGradient(object):
         """
         if self.config.use_baseline:
             # override the behavior of advantage by subtracting baseline
-            advantages = self.baseline_network.calculate_advantage(returns, observations)
+            advantages = self.baseline_network.calculate_advantage(
+                returns, observations
+            )
         else:
             advantages = returns
 
@@ -261,7 +276,12 @@ class PolicyGradient(object):
         advantages = np2torch(advantages)
         #######################################################
         #########   YOUR CODE HERE - 5-7 lines.    ############
-
+        log_probs = self.policy.action_distribution(observations).log_prob(actions)
+        # maximize torch.mean(log_probs * advantages) but since loss.backward() minimizes, we minimize -torch.mean(log_probs * advantages)
+        loss = -torch.mean(log_probs * advantages)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -275,8 +295,10 @@ class PolicyGradient(object):
         last_record = 0
 
         self.init_averages()
-        all_total_rewards = []         # the returns of all episodes samples for training purposes
-        averaged_total_rewards = []    # the returns for each iteration
+        all_total_rewards = (
+            []
+        )  # the returns of all episodes samples for training purposes
+        averaged_total_rewards = []  # the returns for each iteration
 
         for t in range(self.config.num_batches):
 
@@ -298,25 +320,32 @@ class PolicyGradient(object):
             self.update_policy(observations, actions, advantages)
 
             # logging
-            if (t % self.config.summary_freq == 0):
+            if t % self.config.summary_freq == 0:
                 self.update_averages(total_rewards, all_total_rewards)
                 self.record_summary(t)
 
             # compute reward statistics for this batch and log
             avg_reward = np.mean(total_rewards)
             sigma_reward = np.sqrt(np.var(total_rewards) / len(total_rewards))
-            msg = "Average reward: {:04.2f} +/- {:04.2f}".format(avg_reward, sigma_reward)
+            msg = "[ITERATION {}]: Average reward: {:04.2f} +/- {:04.2f}".format(
+                t, avg_reward, sigma_reward
+            )
             averaged_total_rewards.append(avg_reward)
             self.logger.info(msg)
 
-            if  self.config.record and (last_record > self.config.record_freq):
+            if self.config.record and (last_record > self.config.record_freq):
                 self.logger.info("Recording...")
                 last_record = 0
                 self.record()
 
         self.logger.info("- Training done.")
         np.save(self.config.scores_output, averaged_total_rewards)
-        export_plot(averaged_total_rewards, "Score", self.config.env_name, self.config.plot_output)
+        export_plot(
+            averaged_total_rewards,
+            "Score",
+            self.config.env_name,
+            self.config.plot_output,
+        )
 
     def evaluate(self, env=None, num_episodes=1):
         """
@@ -324,7 +353,8 @@ class PolicyGradient(object):
         Not used right now, all evaluation statistics are computed during training
         episodes.
         """
-        if env==None: env = self.env
+        if env == None:
+            env = self.env
         paths, rewards = self.sample_path(env, num_episodes)
         avg_reward = np.mean(rewards)
         sigma_reward = np.sqrt(np.var(rewards) / len(rewards))
@@ -338,7 +368,9 @@ class PolicyGradient(object):
         """
         env = gym.make(self.config.env_name)
         env.seed(self.seed)
-        env = gym.wrappers.Monitor(env, self.config.record_path, video_callable=lambda x: True, resume=True)
+        env = gym.wrappers.Monitor(
+            env, self.config.record_path, video_callable=lambda x: True, resume=True
+        )
         self.evaluate(env, 1)
 
     def run(self):

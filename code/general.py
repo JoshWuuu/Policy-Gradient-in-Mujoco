@@ -5,7 +5,8 @@ import math
 import numpy as np
 from collections import deque
 import matplotlib
-matplotlib.use('agg')
+
+matplotlib.use("agg")
 import matplotlib.pyplot as plt
 import torch
 
@@ -31,12 +32,12 @@ def get_logger(filename):
     """
     Return a logger instance to a file
     """
-    logger = logging.getLogger('logger')
+    logger = logging.getLogger("logger")
     logger.setLevel(logging.DEBUG)
-    logging.basicConfig(format='%(message)s', level=logging.DEBUG)
+    logging.basicConfig(format="%(message)s", level=logging.DEBUG)
     handler = logging.FileHandler(filename)
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s: %(message)s'))
+    handler.setFormatter(logging.Formatter("%(asctime)s:%(levelname)s: %(message)s"))
     logging.getLogger().addHandler(handler)
     return logger
 
@@ -76,11 +77,14 @@ class Progbar(object):
 
         for k, v in values:
             if k not in self.sum_values:
-                self.sum_values[k] = [v * (current - self.seen_so_far), current - self.seen_so_far]
+                self.sum_values[k] = [
+                    v * (current - self.seen_so_far),
+                    current - self.seen_so_far,
+                ]
                 self.unique_values.append(k)
             else:
                 self.sum_values[k][0] += v * (current - self.seen_so_far)
-                self.sum_values[k][1] += (current - self.seen_so_far)
+                self.sum_values[k][1] += current - self.seen_so_far
         for k, v in exact:
             if k not in self.sum_values:
                 self.unique_values.append(k)
@@ -94,7 +98,7 @@ class Progbar(object):
                 self.exp_avg[k] = v
             else:
                 self.exp_avg[k] *= self.discount
-                self.exp_avg[k] += (1-self.discount)*v
+                self.exp_avg[k] += (1 - self.discount) * v
 
         self.seen_so_far = current
 
@@ -105,18 +109,18 @@ class Progbar(object):
             sys.stdout.write("\r")
 
             numdigits = int(np.floor(np.log10(self.target))) + 1
-            barstr = '%%%dd/%%%dd [' % (numdigits, numdigits)
+            barstr = "%%%dd/%%%dd [" % (numdigits, numdigits)
             bar = barstr % (current, self.target)
-            prog = float(current)/self.target
-            prog_width = int(self.width*prog)
+            prog = float(current) / self.target
+            prog_width = int(self.width * prog)
             if prog_width > 0:
-                bar += ('='*(prog_width-1))
+                bar += "=" * (prog_width - 1)
                 if current < self.target:
-                    bar += '>'
+                    bar += ">"
                 else:
-                    bar += '='
-            bar += ('.'*(self.width-prog_width))
-            bar += ']'
+                    bar += "="
+            bar += "." * (self.width - prog_width)
+            bar += "]"
             sys.stdout.write(bar)
             self.total_width = len(bar)
 
@@ -124,24 +128,27 @@ class Progbar(object):
                 time_per_unit = (now - self.start) / current
             else:
                 time_per_unit = 0
-            eta = time_per_unit*(self.target - current)
-            info = ''
+            eta = time_per_unit * (self.target - current)
+            info = ""
             if current < self.target:
-                info += ' - ETA: %ds' % eta
+                info += " - ETA: %ds" % eta
             else:
-                info += ' - %ds' % (now - self.start)
+                info += " - %ds" % (now - self.start)
             for k in self.unique_values:
                 if type(self.sum_values[k]) is list:
-                    info += ' - %s: %.4f' % (k, self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                    info += " - %s: %.4f" % (
+                        k,
+                        self.sum_values[k][0] / max(1, self.sum_values[k][1]),
+                    )
                 else:
-                    info += ' - %s: %s' % (k, self.sum_values[k])
+                    info += " - %s: %s" % (k, self.sum_values[k])
 
             for k, v in self.exp_avg.iteritems():
-                info += ' - %s: %.4f' % (k, v)
+                info += " - %s: %.4f" % (k, v)
 
             self.total_width += len(info)
             if prev_total_width > self.total_width:
-                info += ((prev_total_width-self.total_width) * " ")
+                info += (prev_total_width - self.total_width) * " "
 
             sys.stdout.write(info)
             sys.stdout.flush()
@@ -151,13 +158,16 @@ class Progbar(object):
 
         if self.verbose == 2:
             if current >= self.target:
-                info = '%ds' % (now - self.start)
+                info = "%ds" % (now - self.start)
                 for k in self.unique_values:
-                    info += ' - %s: %.4f' % (k, self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                    info += " - %s: %.4f" % (
+                        k,
+                        self.sum_values[k][0] / max(1, self.sum_values[k][1]),
+                    )
                 sys.stdout.write(info + "\n")
 
     def add(self, n, values=[]):
-        self.update(self.seen_so_far+n, values)
+        self.update(self.seen_so_far + n, values)
 
 
 def batch_iterator(*args, batch_size=1000, shuffle=False):
